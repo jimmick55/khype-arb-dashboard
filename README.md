@@ -1,88 +1,85 @@
-# kHYPE:HYPE Arbitrage Dashboard (v3 — 24/7 history)
+[README.md](https://github.com/user-attachments/files/29857129/README.md)
+# HYPE LST Arbitrage Dashboard (v4 — kHYPE · vkHYPE · LHYPE)
 
-Real-time tracker for the kHYPE → HYPE redemption arbitrage on HyperEVM, with
-server-side snapshots so charts keep filling in even when nobody has the page open.
+Real-time tracker for HYPE liquid-staking-token redemption arbitrage on HyperEVM:
+buy the LST below its redemption rate on a DEX, redeem/unstake through the
+protocol, receive HYPE after the cooldown.
 
-Buy kHYPE below its redemption rate on a DEX, unstake through Kinetiq, receive
-HYPE after the cooldown. **No withdrawal fee** (removed), **8.5-day cooldown**.
+| Token | Protocol | Cooldown | Fee | Coverage |
+|---|---|---|---|---|
+| kHYPE | Kinetiq | 8.5 days | none (removed) | live quotes + 24/7 charts |
+| vkHYPE | Kinetiq Earn (Veda vault) | 5 days | no exit fee | live quotes only |
+| LHYPE | loopedHYPE (Nucleus vault) | 3 days | — | live quotes only |
 
-APY = `((redeemValue / hypeIn) − 1) × (365 / 8.5) × 100`
+APY per token = `((redeemValue / hypeIn) − 1) × (365 / cooldown) × 100` —
+each token annualizes over its own cooldown. Trade sizes quoted:
+100 / 1K / 2K / 5K / 10K HYPE.
 
-## What's in v3
+## Redemption-rate sources (all on-chain via HyperEVM RPC)
 
-- Trade sizes denominated in **HYPE**: 100 / 1K / 2K / 5K / 10K HYPE
-- HYPE price shown to 2 decimals (e.g. $68.42)
-- **24/7 history**: `/api/snapshot` (cron-triggered) stores compact data points
-  in Upstash Redis; `/api/history` serves them to the charts. Live points are
-  appended client-side while your tab is open.
-- Gracefully degrades: if the API/database isn't configured, it falls back to
-  live-session-only mode with a notice.
+- **kHYPE** — `StakingAccountant.kHYPEToHYPE(1e18)` at
+  `0x9209648Ec9D448EF57116B73A2f081835643dc7A` (selector `0x759bc2fc`).
+- **LHYPE** — Nucleus `Accountant.getRate()` at
+  `0xcE621a3CA6F72706678cFF0572ae8d15e5F001c3` (from loopedHYPE's official
+  security docs), converted to HYPE via the accountant's `base()` asset.
+- **vkHYPE** — the Veda accountant address isn't published, so it's
+  **auto-discovered on-chain** each session: `vault.hook()` (`0x7f5a7c7b`,
+  the BoringVault transfer hook = the Teller) → `teller.accountant()`
+  (`0x4fb3ccc5`) → `accountant.getRate()` (`0x679aefce`). The accountant's
+  `base()` (`0x5001f3b5`) determines conversion: WHYPE base is used directly,
+  kHYPE base is multiplied by the kHYPE→HYPE rate. If discovery ever fails
+  (e.g. Veda changes the hook), the vkHYPE section shows a clear error
+  instead of wrong numbers — you can then pin the address in
+  `CONFIG.TOKENS[].accountant` in `index.html`.
 
-## Cost: $0 (and zero AI tokens — no AI involved at all)
+DEX buy quotes come from the KyberSwap Aggregator (native HYPE → token,
+WHYPE fallback). HYPE/USD is derived from Kyber's `amountInUsd`.
 
-| Piece | Plan | Usage here | Limit |
-|---|---|---|---|
-| Vercel hosting + functions | Hobby (free) | 2 tiny fn calls / 5 min | well under free limits |
-| Upstash Redis | Free tier | ~900 commands/day | 10,000/day |
-| cron-job.org (scheduler) | Free | 1 job every 5 min | free |
+Token addresses: kHYPE `0xfD739d4e423301CE9385c1fb8850539D657C296D`,
+vkHYPE `0x9ba2edc44e0a4632eb4723e81d4142353e1bb160`,
+LHYPE `0x5748ae796AE46A4F1348a1693de4b50560485562`.
 
-A snapshot every 5 minutes ≈ 288/day. Stored compactly (~150 bytes each),
-capped at 6,000 points (~3 weeks at 5-min resolution — raise `MAX_SNAPSHOTS`
-in `api/_lib.js` if you want more; storage is nowhere near the free limit).
+## 24/7 history (kHYPE charts)
 
-## Setup (one time, ~5 minutes)
+`/api/snapshot` (cron-triggered) stores compact kHYPE data points in Upstash
+Redis; `/api/history` serves them to the charts. vkHYPE/LHYPE are live-only
+by design, so they're not snapshotted (keeps storage tiny). Costs $0 and zero
+AI tokens: Vercel Hobby (free) + Upstash free tier (~900 of 10,000 daily
+commands at 5-min snapshots) + cron-job.org (free).
 
-### 1. Create the database
-- Go to [console.upstash.com](https://console.upstash.com) → create a free Redis database
-- Copy `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`
+## Setup (~5 minutes)
 
-### 2. Deploy to Vercel
-```bash
-vercel deploy --prod
-```
-Then in the Vercel project → **Settings → Environment Variables**, add:
-- `UPSTASH_REDIS_REST_URL`
-- `UPSTASH_REDIS_REST_TOKEN`
-- `CRON_SECRET` — any random string (optional but recommended; protects the snapshot endpoint)
-
-Redeploy after adding env vars (`vercel deploy --prod` again).
-
-### 3. Schedule the snapshots
-Vercel's built-in cron on the **Hobby plan only runs once per day**, so
-`vercel.json` ships with a daily schedule as a baseline. For real 5-minute
-resolution, pick one:
-
-- **Free (Hobby):** create an account at [cron-job.org](https://cron-job.org)
-  and add a job hitting `https://YOUR-APP.vercel.app/api/snapshot?key=YOUR_CRON_SECRET`
-  every 5 minutes.
-- **Vercel Pro:** just change the schedule in `vercel.json` to `"*/5 * * * *"`
-  and delete the external cron. Vercel automatically sends the `CRON_SECRET`
-  as a bearer token.
-
-### 4. Verify
-- Open `https://YOUR-APP.vercel.app/api/snapshot?key=YOUR_CRON_SECRET` → should return `{"ok":true,...}`
-- Open `https://YOUR-APP.vercel.app/api/history` → should return stored snapshots
-- The dashboard's History card should read "Server (24/7) + live"
-
-## Data sources
-
-- **Redemption rate** — `StakingAccountant.kHYPEToHYPE(1e18)` at
-  `0x9209648Ec9D448EF57116B73A2f081835643dc7A` via HyperEVM RPC
-  (`rpc.hyperliquid.xyz/evm`, with fallbacks). Selector `0x759bc2fc`.
-- **DEX buy quotes** — KyberSwap Aggregator API, chain `hyperevm`, native HYPE →
-  kHYPE (`0xfD739d4e423301CE9385c1fb8850539D657C296D`), WHYPE fallback.
-- **HYPE/USD** — derived from Kyber's `amountInUsd` on the 100 HYPE route.
+1. **Database** — [console.upstash.com](https://console.upstash.com) → create
+   free Redis DB → copy `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`.
+2. **Deploy** — `vercel deploy --prod`, then in Vercel → Settings →
+   Environment Variables add the two Upstash vars plus `CRON_SECRET` (any
+   random string). Redeploy.
+3. **Schedule** — Vercel's built-in cron on Hobby only runs daily (that's the
+   baseline in `vercel.json`). For 5-minute resolution: free option is a
+   [cron-job.org](https://cron-job.org) job hitting
+   `https://YOUR-APP.vercel.app/api/snapshot?key=YOUR_CRON_SECRET` every
+   5 minutes; on Vercel Pro just change `vercel.json` to `"*/5 * * * *"`.
+4. **Verify** — `/api/snapshot?key=...` returns `{"ok":true}`, `/api/history`
+   returns snapshots, and the History card reads "Server (24/7) + live".
 
 ## Project layout
 
 ```
-index.html        dashboard (static, client-side live quotes + charts)
-api/_lib.js       shared: RPC, Kyber, snapshot builder, Redis helper
-api/snapshot.js   cron target — takes a snapshot, stores it
+index.html        dashboard (client-side live quotes for all 3 tokens + kHYPE charts)
+api/_lib.js       shared: RPC, Kyber, kHYPE snapshot builder, Redis helper
+api/snapshot.js   cron target — takes a kHYPE snapshot, stores it
 api/history.js    serves stored snapshots to the frontend
 vercel.json       cron config (daily baseline; see step 3)
 ```
 
-Contract addresses from https://kinetiq.xyz/docs/contracts-and-audits
-(verified July 2026). If Kinetiq migrates contracts, update `CONFIG` in
-both `api/_lib.js` and `index.html`.
+## Notes
+
+- Cooldowns are configured per token in `CONFIG.TOKENS` (kHYPE 8.5d,
+  vkHYPE 5d, LHYPE 3d per your spec — Kinetiq Earn officially quotes
+  "~3–5 days, max 10" and vault withdrawals depend on solver liquidity,
+  so treat the vault APYs as estimates).
+- No withdrawal fees are applied for any token. If a protocol introduces
+  one, add it to the redeem-value math in `refresh()`.
+- Contract addresses verified July 2026 from kinetiq.xyz/docs and
+  docs.loopingcollective.org. If a protocol migrates, update `CONFIG`
+  in `index.html` (and `api/_lib.js` for kHYPE).
