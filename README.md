@@ -1,4 +1,3 @@
-[README.md](https://github.com/user-attachments/files/29835668/README.md)
 # kHYPE:HYPE Arbitrage Dashboard (v3 — 24/7 history)
 
 Real-time tracker for the kHYPE → HYPE redemption arbitrage on HyperEVM, with
