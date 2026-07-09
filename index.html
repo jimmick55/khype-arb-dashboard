@@ -3,9 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="Track kHYPE to HYPE redemption arbitrage APY in real-time. No withdrawal fee, 8.5 day cooldown.">
-<title>kHYPE:HYPE Arbitrage Dashboard</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<meta name="description" content="Track kHYPE, vkHYPE and LHYPE redemption arbitrage APR in real-time on HyperEVM.">
+<title>HYPE LST Arbitrage Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 <style>
   :root{
     --bg:#0a0e14;
@@ -29,8 +29,6 @@
   .wrap{max-width:1180px;margin:0 auto;padding:28px 20px 60px}
 
   header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;margin-bottom:26px}
-  .brand{display:flex;align-items:center;gap:14px}
-  .brand img{height:34px;width:34px}
   .brand h1{font-size:20px;font-weight:650;letter-spacing:-.01em}
   .brand p{font-size:12.5px;color:var(--muted);margin-top:2px}
   .status{display:flex;align-items:center;gap:16px;font-size:12.5px;color:var(--muted)}
@@ -45,7 +43,7 @@
   .refresh-btn:disabled{opacity:.5;cursor:wait}
   .refresh-btn:focus-visible,.range button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
-  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:24px}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:24px}
   .card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:16px 18px;position:relative;overflow:hidden}
   .card .label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim);margin-bottom:8px}
   .card .value{font-family:var(--mono);font-size:22px;font-weight:600;letter-spacing:-.01em}
@@ -53,16 +51,20 @@
   .card.hero{border-color:rgba(94,234,212,.35)}
   .card.hero::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(94,234,212,.07),transparent 55%);pointer-events:none}
   .pos{color:var(--pos)} .neg{color:var(--neg)} .accent{color:var(--accent)}
-  .strike{text-decoration:line-through;color:var(--dim);font-size:14px;margin-right:6px}
 
   .banner{background:rgba(94,234,212,.06);border:1px solid rgba(94,234,212,.25);border-radius:10px;
-    padding:10px 16px;font-size:13px;color:var(--muted);margin-bottom:24px;display:flex;gap:10px;align-items:center}
+    padding:10px 16px;font-size:13px;color:var(--muted);margin-bottom:24px}
   .banner b{color:var(--accent);font-weight:600}
 
   .panel{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:22px}
   .panel-head{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;margin-bottom:16px}
-  .panel-head h2{font-size:15px;font-weight:650}
+  .panel-head h2{font-size:15px;font-weight:650;display:flex;align-items:center;gap:10px}
   .panel-head p{font-size:12px;color:var(--muted);margin-top:3px}
+  .tok-stats{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  .chip{background:var(--panel-2);border:1px solid var(--border);border-radius:7px;padding:4px 10px;
+    font-size:11.5px;color:var(--muted);font-family:var(--mono)}
+  .chip b{color:var(--text);font-weight:600}
+  .chip.hl{border-color:rgba(94,234,212,.3);color:var(--accent)}
   .range{display:flex;gap:4px;background:var(--panel-2);border:1px solid var(--border);border-radius:8px;padding:3px}
   .range button{background:none;border:none;color:var(--muted);font-size:11.5px;padding:5px 10px;border-radius:6px;cursor:pointer;font-family:var(--sans)}
   .range button.active{background:var(--border);color:var(--text)}
@@ -93,11 +95,8 @@
 
   <header>
     <div class="brand">
-      <img src="https://kinetiq.xyz/assets/brand/logo/kinetiq-logomark-dark.svg" alt="Kinetiq" onerror="this.style.display='none'">
-      <div>
-        <h1>kHYPE:HYPE Arbitrage</h1>
-        <p>Real-time redemption arbitrage tracking · HyperEVM · 24/7 history</p>
-      </div>
+      <h1>HYPE LST Arbitrage</h1>
+      <p>kHYPE · vkHYPE · LHYPE — redemption arbitrage on HyperEVM · 24/7 history</p>
     </div>
     <div class="status">
       <div class="live"><span class="dot" id="live-dot"></span><span id="live-text">Live</span></div>
@@ -107,7 +106,9 @@
   </header>
 
   <div class="banner">
-    <b>Fee update</b> Kinetiq removed the withdrawal fee — redemptions now pay the full rate. The 8.5-day unstaking cooldown still applies.
+    <b>Buy below redemption → unstake → collect the spread.</b>
+    kHYPE: HYPE → kHYPE → HYPE (8.5d, no fee) · vkHYPE: kHYPE → vkHYPE → kHYPE (5d) · LHYPE: HYPE → LHYPE → HYPE (3d).
+    Each spread annualizes over its own cooldown.
   </div>
 
   <div class="errbox" id="errbox"></div>
@@ -115,24 +116,9 @@
 
   <div class="cards">
     <div class="card hero">
-      <div class="label">Best APY</div>
+      <div class="label">Best Annualized</div>
       <div class="value accent" id="c-apy">…</div>
-      <div class="sub" id="c-apy-sub">Annualized return</div>
-    </div>
-    <div class="card">
-      <div class="label">Redemption Rate</div>
-      <div class="value" id="c-rate">…</div>
-      <div class="sub">HYPE per kHYPE</div>
-    </div>
-    <div class="card">
-      <div class="label">Cooldown</div>
-      <div class="value">8.5 days</div>
-      <div class="sub">Unstaking period</div>
-    </div>
-    <div class="card">
-      <div class="label">Withdrawal Fee</div>
-      <div class="value"><span class="strike">0.1%</span><span class="pos">None</span></div>
-      <div class="sub">Fee removed</div>
+      <div class="sub" id="c-apy-sub">Across all tokens &amp; sizes</div>
     </div>
     <div class="card">
       <div class="label">HYPE Price</div>
@@ -146,9 +132,12 @@
     </div>
   </div>
 
+  <!-- token sections injected here -->
+  <div id="token-sections"></div>
+
   <div class="panel">
     <div class="panel-head">
-      <div><h2>APY History</h2><p>Arbitrage APY by trade size over time · 8.5-day cooldown, no fee</p></div>
+      <div><h2>kHYPE APY History</h2><p>Arbitrage APY by trade size over time · 8.5-day cooldown, no fee</p></div>
       <div class="range" id="range-apy" role="group" aria-label="APY chart time range"></div>
     </div>
     <div class="chart-box">
@@ -159,7 +148,7 @@
 
   <div class="panel">
     <div class="panel-head">
-      <div><h2>Redemption &amp; Buy Rates</h2><p>HYPE per kHYPE — protocol redeem rate vs DEX buy rate by size</p></div>
+      <div><h2>kHYPE Redemption &amp; Buy Rates</h2><p>HYPE per kHYPE — protocol redeem rate vs DEX buy rate by size</p></div>
       <div class="range" id="range-rates" role="group" aria-label="Rates chart time range"></div>
     </div>
     <div class="chart-box">
@@ -168,47 +157,29 @@
     </div>
   </div>
 
-  <div class="panel">
-    <div class="panel-head">
-      <div><h2>Live Quotes</h2><p>Buy kHYPE on KyberSwap → unstake via Kinetiq → receive HYPE after 8.5 days</p></div>
-    </div>
-    <div class="table-scroll">
-      <table>
-        <thead><tr>
-          <th>Trade Size</th><th>USD Value</th><th>kHYPE Out</th><th>Buy Rate</th>
-          <th>Redeem Value</th><th>Profit (HYPE)</th><th>Profit %</th><th>APY</th>
-        </tr></thead>
-        <tbody id="quotes-body">
-          <tr><td colspan="8" class="loading-row">Loading quotes…</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-
   <footer>
-    <span>Data from Kinetiq (HyperEVM RPC) &amp; KyberSwap · <span id="last-updated"></span></span>
+    <span>Data: Kinetiq / Veda / Nucleus contracts (HyperEVM RPC) &amp; KyberSwap · <span id="last-updated"></span></span>
     <span>
-      <a href="https://kinetiq.xyz/stake-hype?unstake=true" target="_blank" rel="noopener">Unstake</a> ·
-      <a href="https://kinetiq.xyz/docs" target="_blank" rel="noopener">Documentation</a> ·
-      <a href="https://kinetiq.xyz" target="_blank" rel="noopener">Kinetiq.xyz</a>
+      <a href="https://kinetiq.xyz/stake-hype?unstake=true" target="_blank" rel="noopener">Kinetiq Unstake</a> ·
+      <a href="https://kinetiq.xyz/earn/kinetiq-earn" target="_blank" rel="noopener">Kinetiq Earn</a> ·
+      <a href="https://www.loopedhype.com" target="_blank" rel="noopener">loopedHYPE</a>
     </span>
   </footer>
 </div>
 
 <script>
 /* ============================================================
-   kHYPE:HYPE Arbitrage Dashboard — v3
-   - No withdrawal fee (removed), 8.5-day cooldown
-   - Trade sizes denominated in HYPE: 100 / 1K / 2K / 5K / 10K
-   - 24/7 history served by /api/history (Vercel fn + Upstash),
-     live points appended client-side while the tab is open
+   HYPE LST Arbitrage Dashboard — v5
+   - kHYPE:  HYPE  → kHYPE  → HYPE   (8.5d, no fee) — quotes + 24/7 charts
+   - vkHYPE: kHYPE → vkHYPE → kHYPE  (5d unstake)  — APR, live quotes only
+   - LHYPE:  HYPE  → LHYPE  → HYPE   (3d unstake)  — live quotes only
+   - Trade sizes: 100 / 1K / 2K / 5K / 10K of the input asset
    ============================================================ */
 
 const CONFIG = {
-  COOLDOWN_DAYS: 8.5,
   REFRESH_MS: 60_000,
   HISTORY_POLL_MS: 5 * 60_000,
-  SIZES_HYPE: [100, 1000, 2000, 5000, 10000],
+  SIZES: [100, 1000, 2000, 5000, 10000],
   KHYPE: '0xfD739d4e423301CE9385c1fb8850539D657C296D',
   STAKING_ACCOUNTANT: '0x9209648Ec9D448EF57116B73A2f081835643dc7A',
   NATIVE: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE',
@@ -219,15 +190,50 @@ const CONFIG = {
     'https://hyperliquid.drpc.org'
   ],
   KYBER: 'https://aggregator-api.kyberswap.com/hyperevm/api/v1/routes',
-  SEL_KHYPE_TO_HYPE: '0x759bc2fc',
+  // selectors
+  SEL_KHYPE_TO_HYPE: '0x759bc2fc', // kHYPEToHYPE(uint256)
+  SEL_HOOK:          '0x7f5a7c7b', // hook()          — BoringVault beforeTransferHook (the Teller)
+  SEL_ACCOUNTANT:    '0x4fb3ccc5', // accountant()    — on the Teller
+  SEL_GET_RATE:      '0x679aefce', // getRate()       — on the Accountant, in base-asset units
+  SEL_BASE:          '0x5001f3b5', // base()          — Accountant base asset
   MAX_LIVE_POINTS: 1500,
-  MAX_CHART_POINTS: 900
+  MAX_CHART_POINTS: 900,
+
+  /* unit = input & redemption asset of the arb loop.
+     'HYPE'  → buy with native HYPE, redeem to HYPE
+     'kHYPE' → buy with kHYPE, redeem to kHYPE */
+  TOKENS: [
+    {
+      sym: 'kHYPE', name: 'Kinetiq Staked HYPE',
+      addr: '0xfD739d4e423301CE9385c1fb8850539D657C296D',
+      unit: 'HYPE', cooldown: 8.5, source: 'kinetiq', yieldLabel: 'APY',
+      flow: 'buy kHYPE with HYPE on KyberSwap → unstake via Kinetiq → HYPE after 8.5 days · no fee',
+      link: 'https://kinetiq.xyz/stake-hype?unstake=true'
+    },
+    {
+      sym: 'vkHYPE', name: 'Kinetiq Earn Vault (Veda)',
+      addr: '0x9ba2edc44e0a4632eb4723e81d4142353e1bb160',
+      unit: 'kHYPE', cooldown: 5, source: 'veda', yieldLabel: 'APR',
+      accountant: null, // auto-discovered via vault.hook() → teller.accountant()
+      flow: 'swap kHYPE → vkHYPE on KyberSwap → unstake vault → kHYPE after ~5 days · no exit fee',
+      link: 'https://kinetiq.xyz/earn/kinetiq-earn'
+    },
+    {
+      sym: 'LHYPE', name: 'Looped HYPE (Nucleus)',
+      addr: '0x5748ae796AE46A4F1348a1693de4b50560485562',
+      unit: 'HYPE', cooldown: 3, source: 'veda', yieldLabel: 'APY',
+      accountant: '0xcE621a3CA6F72706678cFF0572ae8d15e5F001c3',
+      flow: 'buy LHYPE with HYPE on KyberSwap → unstake → HYPE after 3 days',
+      link: 'https://www.loopedhype.com'
+    }
+  ]
 };
 
 const state = {
-  serverSnaps: [],   // compact: {t, r, p, q:[[hype,buyRate,apy],...]}
-  liveSnaps: [],     // same compact shape, collected this session
-  lastFull: null,    // full detail of latest live fetch (for the table)
+  serverSnaps: [],       // kHYPE compact history from /api/history
+  liveSnaps: [],         // kHYPE compact points from this session
+  lastFull: null,        // latest full fetch
+  accountants: {},       // resolved accountant addresses per token symbol
   range: { apy: '24H', rates: '24H' },
   timer: null, nextAt: 0, busy: false, serverOk: null
 };
@@ -237,12 +243,15 @@ const $ = id => document.getElementById(id);
 const fmt = (n, d=4) => n == null || !isFinite(n) ? '…' : n.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
 const fmtUsd2 = n => n == null ? '…' : '$' + n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 const fmtUsd0 = n => n == null ? '…' : '$' + n.toLocaleString('en-US',{maximumFractionDigits:0});
-const sizeLabel = h => (h >= 1000 ? (h/1000) + 'K' : h) + ' HYPE';
+const sizeLabel = (n, unit) => ((n >= 1000 ? (n/1000) + 'K' : n) + ' ' + unit);
+const addrEq = (a,b) => a && b && a.toLowerCase() === b.toLowerCase();
 
-function toWeiDec(hype){ return (BigInt(hype) * 10n**18n).toString(); }
+function toWeiDec(amount){ return (BigInt(amount) * 10n**18n).toString(); }
 const fromWei = s => Number(BigInt(s)) / 1e18;
+const wordToAddr = hex => '0x' + hex.replace(/^0x/, '').slice(-40);
+const ZERO = '0x0000000000000000000000000000000000000000';
 
-/* ---------- data sources ---------- */
+/* ---------- chain + DEX ---------- */
 async function rpcCall(to, data){
   let lastErr;
   for (const url of CONFIG.RPCS){
@@ -260,14 +269,40 @@ async function rpcCall(to, data){
   throw lastErr || new Error('all RPCs failed');
 }
 
-async function fetchRedemptionRate(){
+async function fetchKhypeRate(){
   const oneKhype = '0000000000000000000000000000000000000000000000000de0b6b3a7640000';
   const res = await rpcCall(CONFIG.STAKING_ACCOUNTANT, CONFIG.SEL_KHYPE_TO_HYPE + oneKhype);
   return fromWei(res);
 }
 
-async function kyberRoute(tokenIn, amountInWeiDec){
-  const u = `${CONFIG.KYBER}?tokenIn=${tokenIn}&tokenOut=${CONFIG.KHYPE}&amountIn=${amountInWeiDec}&gasInclude=true`;
+/* Veda/Nucleus BoringVault rate, converted into the token's loop unit.
+   Accountant.getRate() is denominated in the vault's base asset. */
+async function resolveAccountant(token){
+  if (token.accountant) return token.accountant;
+  if (state.accountants[token.sym]) return state.accountants[token.sym];
+  const teller = wordToAddr(await rpcCall(token.addr, CONFIG.SEL_HOOK));
+  if (addrEq(teller, ZERO)) throw new Error('vault hook not set');
+  const acct = wordToAddr(await rpcCall(teller, CONFIG.SEL_ACCOUNTANT));
+  if (addrEq(acct, ZERO)) throw new Error('accountant not found on teller');
+  state.accountants[token.sym] = acct;
+  return acct;
+}
+
+async function fetchVedaRate(token, khypeRate){
+  const acct = await resolveAccountant(token);
+  const raw = fromWei(await rpcCall(acct, CONFIG.SEL_GET_RATE));
+  const base = wordToAddr(await rpcCall(acct, CONFIG.SEL_BASE));
+  const baseUnit = addrEq(base, CONFIG.WHYPE) ? 'HYPE'
+                 : addrEq(base, CONFIG.KHYPE) ? 'kHYPE'
+                 : null;
+  if (!baseUnit) throw new Error('unsupported base asset ' + base);
+  if (baseUnit === token.unit) return raw;
+  // convert between HYPE- and kHYPE-denominated rates
+  return token.unit === 'HYPE' ? raw * khypeRate : raw / khypeRate;
+}
+
+async function kyberRoute(tokenIn, tokenOut, amountInWeiDec){
+  const u = `${CONFIG.KYBER}?tokenIn=${tokenIn}&tokenOut=${tokenOut}&amountIn=${amountInWeiDec}&gasInclude=true`;
   const r = await fetch(u, { headers: { 'x-client-id': 'khype-arb-dashboard' } });
   if (!r.ok) throw new Error(`Kyber HTTP ${r.status}`);
   const j = await r.json();
@@ -276,10 +311,11 @@ async function kyberRoute(tokenIn, amountInWeiDec){
   return rs;
 }
 
-async function kyberQuote(hypeAmount){
-  const wei = toWeiDec(hypeAmount);
-  try { return await kyberRoute(CONFIG.NATIVE, wei); }
-  catch { return await kyberRoute(CONFIG.WHYPE, wei); }
+async function kyberQuote(token, amount){
+  const wei = toWeiDec(amount);
+  if (token.unit === 'kHYPE') return kyberRoute(CONFIG.KHYPE, token.addr, wei);
+  try { return await kyberRoute(CONFIG.NATIVE, token.addr, wei); }
+  catch { return await kyberRoute(CONFIG.WHYPE, token.addr, wei); }
 }
 
 async function fetchServerHistory(){
@@ -296,14 +332,14 @@ async function fetchServerHistory(){
     if (state.serverOk === null){
       state.serverOk = false;
       $('c-snaps-sub').textContent = 'This session only';
-      showNote('24/7 history unavailable (' + (e.message || e) + ') — showing live session data only. Configure Upstash env vars + cron, see README.');
+      showNote('24/7 history unavailable (' + (e.message || e) + ') — kHYPE charts show live session data only. Configure Upstash env vars + cron, see README.');
     }
   }
   updateSnapCount();
   drawCharts();
 }
 
-/* ---------- core refresh (live, client-side) ---------- */
+/* ---------- core refresh ---------- */
 async function refresh(){
   if (state.busy) return;
   state.busy = true;
@@ -311,35 +347,53 @@ async function refresh(){
   hideError();
 
   try {
-    const rate = await fetchRedemptionRate();
+    const khypeRate = await fetchKhypeRate();
+    const full = { t: Date.now(), price: null, tokens: {} };
 
-    const quotes = [];   // full detail for table
-    const compactQ = []; // for charts
-    let price = null;
+    for (const token of CONFIG.TOKENS){
+      const entry = { rate: null, rateError: null, quotes: [] };
+      full.tokens[token.sym] = entry;
 
-    for (const hype of CONFIG.SIZES_HYPE){
       try {
-        const rs = await kyberQuote(hype);
-        const khypeOut = fromWei(rs.amountOut);
-        const buyRate = hype / khypeOut;
-        const redeemValue = khypeOut * rate;   // no fee
-        const profitHype = redeemValue - hype;
-        const profitPct = (redeemValue / hype - 1) * 100;
-        const apy = profitPct * (365 / CONFIG.COOLDOWN_DAYS);
-        if (price === null && rs.amountInUsd) price = Number(rs.amountInUsd) / hype;
-        quotes.push({ hype, usd: price ? hype * price : null, khypeOut, buyRate, redeemValue, profitHype, profitPct, apy });
-        compactQ.push([hype, buyRate, apy]);
+        entry.rate = token.source === 'kinetiq'
+          ? khypeRate
+          : await fetchVedaRate(token, khypeRate);
       } catch(e){
-        quotes.push({ hype, error: e.message });
-        compactQ.push([hype, null, null]);
+        entry.rateError = e.message || String(e);
+        continue;
       }
-      await new Promise(res => setTimeout(res, 350));
+
+      for (const size of CONFIG.SIZES){
+        try {
+          const rs = await kyberQuote(token, size);
+          const tokOut = fromWei(rs.amountOut);
+          const buyRate = size / tokOut;                 // input asset paid per token
+          const redeemValue = tokOut * entry.rate;       // input asset received back at redemption
+          const profit = redeemValue - size;
+          const profitPct = (redeemValue / size - 1) * 100;
+          const annualized = profitPct * (365 / token.cooldown);
+          const usd = rs.amountInUsd ? Number(rs.amountInUsd) : null;
+          if (full.price === null && token.unit === 'HYPE' && usd) full.price = usd / size;
+          entry.quotes.push({ size, usd, tokOut, buyRate, redeemValue, profit, profitPct, annualized });
+        } catch(e){
+          entry.quotes.push({ size, error: e.message });
+        }
+        await new Promise(res => setTimeout(res, 300));
+      }
     }
 
-    const snap = { t: Date.now(), r: rate, p: price, q: compactQ };
-    state.liveSnaps.push(snap);
-    if (state.liveSnaps.length > CONFIG.MAX_LIVE_POINTS) state.liveSnaps.shift();
-    state.lastFull = { t: snap.t, rate, price, quotes };
+    state.lastFull = full;
+
+    // compact kHYPE snapshot for charts
+    const kq = full.tokens['kHYPE'];
+    if (kq && !kq.rateError){
+      const snap = {
+        t: full.t, r: kq.rate, p: full.price,
+        q: kq.quotes.map(q => q.error ? [q.size, null, null] : [q.size, q.buyRate, q.annualized])
+      };
+      state.liveSnaps.push(snap);
+      if (state.liveSnaps.length > CONFIG.MAX_LIVE_POINTS) state.liveSnaps.shift();
+    }
 
     render();
     setLive(true);
@@ -354,36 +408,81 @@ async function refresh(){
 }
 
 /* ---------- rendering ---------- */
+function quoteRows(token, entry){
+  if (entry.rateError)
+    return `<tr><td colspan="8" class="loading-row">Redemption rate unavailable: ${entry.rateError}</td></tr>`;
+  if (!entry.quotes.length)
+    return `<tr><td colspan="8" class="loading-row">Loading quotes…</td></tr>`;
+  return entry.quotes.map(q => {
+    if (q.error) return `<tr><td class="size">${sizeLabel(q.size, token.unit)}</td><td colspan="7" style="color:var(--dim);font-family:var(--sans)">quote unavailable (${q.error})</td></tr>`;
+    const pc = q.profitPct >= 0 ? 'pos' : 'neg';
+    return `<tr>
+      <td class="size">${sizeLabel(q.size, token.unit)}</td>
+      <td>${fmtUsd0(q.usd)}</td>
+      <td>${fmt(q.tokOut,2)}</td>
+      <td>${fmt(q.buyRate,6)}</td>
+      <td>${fmt(q.redeemValue,2)}</td>
+      <td class="${pc}">${q.profit>=0?'+':''}${fmt(q.profit,3)}</td>
+      <td class="${pc}">${q.profitPct>=0?'+':''}${fmt(q.profitPct,3)}%</td>
+      <td class="${pc}"><b>${q.annualized>=0?'+':''}${fmt(q.annualized,2)}%</b></td>
+    </tr>`;
+  }).join('');
+}
+
+function buildTokenSections(){
+  $('token-sections').innerHTML = CONFIG.TOKENS.map(t => `
+    <div class="panel" id="sec-${t.sym}">
+      <div class="panel-head">
+        <div>
+          <h2>${t.sym} Live Quotes</h2>
+          <p>${t.name} — ${t.flow}</p>
+          <div class="tok-stats">
+            <span class="chip">1 ${t.sym} = <b id="rate-${t.sym}">…</b> ${t.unit}</span>
+            <span class="chip">cooldown <b>${t.cooldown}d</b></span>
+            <span class="chip hl" id="best-${t.sym}">best ${t.yieldLabel} …</span>
+          </div>
+        </div>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr>
+            <th>Trade Size</th><th>USD Value</th><th>${t.sym} Out</th><th>Buy Rate</th>
+            <th>Redeem (${t.unit})</th><th>Profit (${t.unit})</th><th>Profit %</th><th>${t.yieldLabel}</th>
+          </tr></thead>
+          <tbody id="tbody-${t.sym}">
+            <tr><td colspan="8" class="loading-row">Loading quotes…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>`).join('');
+}
+
 function render(){
   const f = state.lastFull;
   if (!f) return;
 
-  const best = f.quotes.filter(q => !q.error).reduce((a,b) => (!a || b.apy > a.apy) ? b : a, null);
-
-  $('c-rate').textContent = fmt(f.rate, 6);
   $('c-price').textContent = fmtUsd2(f.price);
 
-  if (best){
-    $('c-apy').textContent = (best.apy >= 0 ? '+' : '') + fmt(best.apy, 2) + '%';
-    $('c-apy').className = 'value ' + (best.apy >= 0 ? 'accent' : 'neg');
-    $('c-apy-sub').textContent = `Annualized · best at ${sizeLabel(best.hype)}`;
+  let globalBest = null;
+  for (const token of CONFIG.TOKENS){
+    const entry = f.tokens[token.sym];
+    if (!entry) continue;
+    $('tbody-' + token.sym).innerHTML = quoteRows(token, entry);
+    $('rate-' + token.sym).textContent = entry.rate != null ? fmt(entry.rate, 6) : '—';
+
+    const best = entry.quotes.filter(q => !q.error).reduce((a,b) => (!a || b.annualized > a.annualized) ? b : a, null);
+    $('best-' + token.sym).innerHTML = best
+      ? `best ${token.yieldLabel} <b>${best.annualized>=0?'+':''}${fmt(best.annualized,2)}%</b> @ ${sizeLabel(best.size, token.unit)}`
+      : `best ${token.yieldLabel} —`;
+    if (best && (!globalBest || best.annualized > globalBest.annualized))
+      globalBest = { ...best, sym: token.sym, unit: token.unit, yieldLabel: token.yieldLabel };
   }
 
-  const rows = f.quotes.map(q => {
-    if (q.error) return `<tr><td class="size">${sizeLabel(q.hype)}</td><td colspan="7" style="color:var(--dim);font-family:var(--sans)">quote unavailable (${q.error})</td></tr>`;
-    const pc = q.profitPct >= 0 ? 'pos' : 'neg';
-    return `<tr>
-      <td class="size">${sizeLabel(q.hype)}</td>
-      <td>${fmtUsd0(q.usd)}</td>
-      <td>${fmt(q.khypeOut,2)}</td>
-      <td>${fmt(q.buyRate,6)}</td>
-      <td>${fmt(q.redeemValue,2)}</td>
-      <td class="${pc}">${q.profitHype>=0?'+':''}${fmt(q.profitHype,3)}</td>
-      <td class="${pc}">${q.profitPct>=0?'+':''}${fmt(q.profitPct,3)}%</td>
-      <td class="${pc}"><b>${q.apy>=0?'+':''}${fmt(q.apy,2)}%</b></td>
-    </tr>`;
-  }).join('');
-  $('quotes-body').innerHTML = rows || '<tr><td colspan="8" class="loading-row">No quotes.</td></tr>';
+  if (globalBest){
+    $('c-apy').textContent = (globalBest.annualized >= 0 ? '+' : '') + fmt(globalBest.annualized, 2) + '%';
+    $('c-apy').className = 'value ' + (globalBest.annualized >= 0 ? 'accent' : 'neg');
+    $('c-apy-sub').textContent = `${globalBest.sym} @ ${sizeLabel(globalBest.size, globalBest.unit)} · ${globalBest.yieldLabel}`;
+  }
 
   $('last-updated').textContent = 'last update: ' + new Date(f.t).toLocaleTimeString();
   updateSnapCount();
@@ -394,13 +493,12 @@ function updateSnapCount(){
   $('c-snaps').textContent = (state.serverSnaps.length + state.liveSnaps.length).toLocaleString();
 }
 
-/* ---------- charts ---------- */
+/* ---------- charts (kHYPE only) ---------- */
 const PALETTE = ['#5eead4','#7dd3fc','#c4b5fd','#fbbf24','#fb923c'];
 let chartApy = null, chartRates = null;
 const RANGES = { '1H':3600e3, '24H':86400e3, '7D':7*86400e3, '30D':30*86400e3, 'All':Infinity };
 
 function mergedSnaps(){
-  // server history + live session points, deduped by minute, sorted
   const seen = new Set();
   const out = [];
   for (const s of [...state.serverSnaps, ...state.liveSnaps]){
@@ -450,15 +548,15 @@ function baseOpts(yLabel, yFmt){
   };
 }
 
-function qVal(s, hype, idx){
-  const row = s.q && s.q.find(r => r[0] === hype);
+function qVal(s, size, idx){
+  const row = s.q && s.q.find(r => r[0] === size);
   return row && row[idx] != null ? row[idx] : null;
 }
 
 function buildDatasetsApy(snaps){
-  return CONFIG.SIZES_HYPE.map((hype,i) => ({
-    label: sizeLabel(hype),
-    data: snaps.map(s => { const v = qVal(s, hype, 2); return v == null ? null : { x:s.t, y:v }; }).filter(Boolean),
+  return CONFIG.SIZES.map((size,i) => ({
+    label: sizeLabel(size, 'HYPE'),
+    data: snaps.map(s => { const v = qVal(s, size, 2); return v == null ? null : { x:s.t, y:v }; }).filter(Boolean),
     borderColor: PALETTE[i], backgroundColor: PALETTE[i],
     borderWidth: 1.8, pointRadius: 0, pointHitRadius: 8, tension: .25
   }));
@@ -470,9 +568,9 @@ function buildDatasetsRates(snaps){
     borderColor:'#e8edf5', backgroundColor:'#e8edf5',
     borderWidth: 2, borderDash:[5,4], pointRadius:0, pointHitRadius:8, tension:.25
   }];
-  CONFIG.SIZES_HYPE.forEach((hype,i) => ds.push({
-    label: 'Buy ' + sizeLabel(hype),
-    data: snaps.map(s => { const v = qVal(s, hype, 1); return v == null ? null : { x:s.t, y:v }; }).filter(Boolean),
+  CONFIG.SIZES.forEach((size,i) => ds.push({
+    label: 'Buy ' + sizeLabel(size, 'HYPE'),
+    data: snaps.map(s => { const v = qVal(s, size, 1); return v == null ? null : { x:s.t, y:v }; }).filter(Boolean),
     borderColor: PALETTE[i], backgroundColor: PALETTE[i],
     borderWidth: 1.6, pointRadius:0, pointHitRadius:8, tension:.25
   }));
@@ -536,6 +634,7 @@ function buildRangeButtons(elId, key){
 }
 
 /* ---------- init ---------- */
+buildTokenSections();
 buildRangeButtons('range-apy', 'apy');
 buildRangeButtons('range-rates', 'rates');
 $('refresh-btn').onclick = refresh;
