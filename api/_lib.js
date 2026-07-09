@@ -1,8 +1,10 @@
 /* Shared logic for /api/snapshot and /api/history.
+   Snapshots track kHYPE only (charts are kHYPE-only by design);
+   vkHYPE and LHYPE are live-quotes-only in the frontend.
    Underscore prefix = not exposed as a route by Vercel. */
 
 const CONFIG = {
-  COOLDOWN_DAYS: 8.5,
+  COOLDOWN_DAYS: 8.5, // kHYPE
   SIZES_HYPE: [100, 1000, 2000, 5000, 10000],
   KHYPE: '0xfD739d4e423301CE9385c1fb8850539D657C296D',
   STAKING_ACCOUNTANT: '0x9209648Ec9D448EF57116B73A2f081835643dc7A',
@@ -46,8 +48,8 @@ async function fetchRedemptionRate() {
   return fromWei(res);
 }
 
-async function kyberRoute(tokenIn, amountInWeiDec) {
-  const u = `${CONFIG.KYBER}?tokenIn=${tokenIn}&tokenOut=${CONFIG.KHYPE}&amountIn=${amountInWeiDec}&gasInclude=true`;
+async function kyberRoute(tokenIn, tokenOut, amountInWeiDec) {
+  const u = `${CONFIG.KYBER}?tokenIn=${tokenIn}&tokenOut=${tokenOut}&amountIn=${amountInWeiDec}&gasInclude=true`;
   const r = await fetch(u, { headers: { 'x-client-id': 'khype-arb-dashboard' } });
   if (!r.ok) throw new Error(`Kyber HTTP ${r.status}`);
   const j = await r.json();
@@ -56,10 +58,10 @@ async function kyberRoute(tokenIn, amountInWeiDec) {
   return rs;
 }
 
-async function kyberQuote(hypeAmount) {
+async function kyberQuote(tokenOut, hypeAmount) {
   const wei = toWeiDec(hypeAmount);
-  try { return await kyberRoute(CONFIG.NATIVE, wei); }
-  catch { return await kyberRoute(CONFIG.WHYPE, wei); }
+  try { return await kyberRoute(CONFIG.NATIVE, tokenOut, wei); }
+  catch { return await kyberRoute(CONFIG.WHYPE, tokenOut, wei); }
 }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -72,7 +74,7 @@ async function takeSnapshot() {
 
   for (const hype of CONFIG.SIZES_HYPE) {
     try {
-      const rs = await kyberQuote(hype);
+      const rs = await kyberQuote(CONFIG.KHYPE, hype);
       const khypeOut = fromWei(rs.amountOut);
       const buyRate = hype / khypeOut;
       const profitPct = (rate / buyRate - 1) * 100;
