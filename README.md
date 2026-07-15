@@ -20,12 +20,17 @@ each token annualizes over its own cooldown. Trade sizes quoted:
 
 - **kHYPE** — `StakingAccountant.kHYPEToHYPE(1e18)` at
   `0x9209648Ec9D448EF57116B73A2f081835643dc7A` (selector `0x759bc2fc`).
-- **kmHYPE** — Markets by Kinetiq uses the same LST `StakingAccountant`
-  codebase, deployed at `0x5901e744759561C63309865Ef8822aBb041655E2`, so the
-  same `kHYPEToHYPE(1e18)` call (selector `0x759bc2fc`) returns the
-  kmHYPE→HYPE rate. The 0.10% withdrawal fee (paid in kmHYPE) is netted out
-  of the redeem-value math; withdrawals take ~8.5 days when the pool holds
-  >500K HYPE, otherwise they queue (per kinetiq.xyz/docs/kmhype).
+- **kmHYPE** — Markets `ExchangeRouter.exLstToTokenOut(exchangeManager,
+  HYPE, 1e18)` at `0x6AB31532382Ba5cD5E8b5D343Cf5995906bb8DD8` with the
+  kmHYPE ExchangeManager `0x4ef8bBaceE867eFd6Faa684B30ecD12DF74C4A48`
+  (selector `0xa618ad3f`). This is the redemption rate shown on
+  kinetiq.xyz/launch/markets-by-kinetiq and read by DefiLlama's
+  kinetiq-markets adapter — it includes Markets revenue, unlike the kmHYPE
+  `StakingAccountant.kHYPEToHYPE` (`0x5901e744759561C63309865Ef8822aBb041655E2`),
+  which only tracks staking-side accounting and is kept as a fallback.
+  The 0.10% withdrawal fee (paid in kmHYPE) is netted out of the
+  redeem-value math; withdrawals take ~8.5 days when the pool holds >500K
+  HYPE, otherwise they queue (per kinetiq.xyz/docs/kmhype).
 - **LHYPE** — Nucleus `Accountant.getRate()` at
   `0xcE621a3CA6F72706678cFF0572ae8d15e5F001c3` (from loopedHYPE's official
   security docs), converted to HYPE via the accountant's `base()` asset.

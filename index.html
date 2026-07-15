@@ -184,7 +184,9 @@ const CONFIG = {
   SIZES: [100, 1000, 2000, 5000, 10000],
   KHYPE: '0xfD739d4e423301CE9385c1fb8850539D657C296D',
   STAKING_ACCOUNTANT: '0x9209648Ec9D448EF57116B73A2f081835643dc7A',
-  KMHYPE_STAKING_ACCOUNTANT: '0x5901e744759561C63309865Ef8822aBb041655E2', // Kinetiq Markets — same LST StakingAccountant codebase
+  KMHYPE_STAKING_ACCOUNTANT: '0x5901e744759561C63309865Ef8822aBb041655E2', // fallback only — staking-side accounting
+  KMHYPE_EXCHANGE_ROUTER: '0x6AB31532382Ba5cD5E8b5D343Cf5995906bb8DD8',    // Markets ExchangeRouter — authoritative kmHYPE→HYPE rate
+  KMHYPE_EXCHANGE_MANAGER: '0x4ef8bBaceE867eFd6Faa684B30ecD12DF74C4A48',   // kmHYPE ExchangeManager
   NATIVE: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE',
   WHYPE: '0x5555555555555555555555555555555555555555',
   RPCS: [
@@ -195,6 +197,7 @@ const CONFIG = {
   KYBER: 'https://aggregator-api.kyberswap.com/hyperevm/api/v1/routes',
   // selectors
   SEL_KHYPE_TO_HYPE: '0x759bc2fc', // kHYPEToHYPE(uint256)
+  SEL_EX_LST_TO_OUT: '0xa618ad3f', // exLstToTokenOut(address,address,uint256) — Markets ExchangeRouter
   SEL_HOOK:          '0x7f5a7c7b', // hook()          — BoringVault beforeTransferHook (the Teller)
   SEL_ACCOUNTANT:    '0x4fb3ccc5', // accountant()    — on the Teller
   SEL_GET_RATE:      '0x679aefce', // getRate()       — on the Accountant, in base-asset units
@@ -289,6 +292,28 @@ async function fetchKinetiqRate(accountant){
 }
 const fetchKhypeRate = () => fetchKinetiqRate(CONFIG.STAKING_ACCOUNTANT);
 
+/* kmHYPE redemption rate — same source as kinetiq.xyz/launch/markets-by-kinetiq:
+   ExchangeRouter.exLstToTokenOut(exchangeManager, HYPE, 1e18) returns HYPE per
+   kmHYPE including Markets revenue (this is also what DefiLlama's adapter reads).
+   The native-HYPE representation isn't documented, so try 0xEeee…, 0x0000…, then
+   WHYPE as tokenOut; fall back to the StakingAccountant (staking-side rate only)
+   if the router can't be read. */
+async function fetchKmHypeRate(){
+  const pad = a => a.replace(/^0x/,'').toLowerCase().padStart(64,'0');
+  const one = (10n ** 18n).toString(16).padStart(64,'0');
+  const call = tokenOut => rpcCall(
+    CONFIG.KMHYPE_EXCHANGE_ROUTER,
+    CONFIG.SEL_EX_LST_TO_OUT + pad(CONFIG.KMHYPE_EXCHANGE_MANAGER) + pad(tokenOut) + one
+  );
+  for (const tokenOut of [CONFIG.NATIVE, ZERO, CONFIG.WHYPE]){
+    try {
+      const rate = fromWei(await call(tokenOut));
+      if (rate > 0) return rate;
+    } catch {}
+  }
+  return fetchKinetiqRate(CONFIG.KMHYPE_STAKING_ACCOUNTANT);
+}
+
 /* Veda/Nucleus BoringVault rate, converted into the token's loop unit.
    Accountant.getRate() is denominated in the vault's base asset. */
 async function resolveAccountant(token){
@@ -370,7 +395,7 @@ async function refresh(){
 
       try {
         entry.rate = token.source === 'kinetiq'         ? khypeRate
-                   : token.source === 'kinetiq-markets' ? await fetchKinetiqRate(CONFIG.KMHYPE_STAKING_ACCOUNTANT)
+                   : token.source === 'kinetiq-markets' ? await fetchKmHypeRate()
                    : await fetchVedaRate(token, khypeRate);
       } catch(e){
         entry.rateError = e.message || String(e);
