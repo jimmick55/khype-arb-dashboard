@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="Track kHYPE, vkHYPE and LHYPE redemption arbitrage APR in real-time on HyperEVM.">
+<meta name="description" content="Track kHYPE, kmHYPE, vkHYPE and LHYPE redemption arbitrage APR in real-time on HyperEVM.">
 <title>HYPE LST Arbitrage Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <style>
@@ -96,7 +96,7 @@
   <header>
     <div class="brand">
       <h1>HYPE LST Arbitrage</h1>
-      <p>kHYPE · vkHYPE · LHYPE — redemption arbitrage on HyperEVM · 24/7 history</p>
+      <p>kHYPE · kmHYPE · vkHYPE · LHYPE — redemption arbitrage on HyperEVM · 24/7 history</p>
     </div>
     <div class="status">
       <div class="live"><span class="dot" id="live-dot"></span><span id="live-text">Live</span></div>
@@ -107,7 +107,7 @@
 
   <div class="banner">
     <b>Buy below redemption → unstake → collect the spread.</b>
-    kHYPE: HYPE → kHYPE → HYPE (8.5d, no fee) · vkHYPE: kHYPE → vkHYPE → kHYPE (5d) · LHYPE: HYPE → LHYPE → HYPE (3d).
+    kHYPE: HYPE → kHYPE → HYPE (8.5d, no fee) · kmHYPE: HYPE → kmHYPE → HYPE (8.5d, 0.10% fee) · vkHYPE: kHYPE → vkHYPE → kHYPE (5d) · LHYPE: HYPE → LHYPE → HYPE (3d).
     Each spread annualizes over its own cooldown.
   </div>
 
@@ -161,6 +161,7 @@
     <span>Data: Kinetiq / Veda / Nucleus contracts (HyperEVM RPC) &amp; KyberSwap · <span id="last-updated"></span></span>
     <span>
       <a href="https://kinetiq.xyz/stake-hype?unstake=true" target="_blank" rel="noopener">Kinetiq Unstake</a> ·
+      <a href="https://kinetiq.xyz/docs/kmhype" target="_blank" rel="noopener">Markets (kmHYPE)</a> ·
       <a href="https://kinetiq.xyz/earn/kinetiq-earn" target="_blank" rel="noopener">Kinetiq Earn</a> ·
       <a href="https://www.loopedhype.com" target="_blank" rel="noopener">loopedHYPE</a>
     </span>
@@ -169,10 +170,11 @@
 
 <script>
 /* ============================================================
-   HYPE LST Arbitrage Dashboard — v5
-   - kHYPE:  HYPE  → kHYPE  → HYPE   (8.5d, no fee) — quotes + 24/7 charts
-   - vkHYPE: kHYPE → vkHYPE → kHYPE  (5d unstake)  — APR, live quotes only
-   - LHYPE:  HYPE  → LHYPE  → HYPE   (3d unstake)  — live quotes only
+   HYPE LST Arbitrage Dashboard — v6
+   - kHYPE:  HYPE  → kHYPE  → HYPE   (8.5d, no fee)      — quotes + 24/7 charts
+   - kmHYPE: HYPE  → kmHYPE → HYPE   (8.5d, 0.10% fee)   — live quotes only
+   - vkHYPE: kHYPE → vkHYPE → kHYPE  (5d unstake)        — APR, live quotes only
+   - LHYPE:  HYPE  → LHYPE  → HYPE   (3d unstake)        — live quotes only
    - Trade sizes: 100 / 1K / 2K / 5K / 10K of the input asset
    ============================================================ */
 
@@ -182,6 +184,7 @@ const CONFIG = {
   SIZES: [100, 1000, 2000, 5000, 10000],
   KHYPE: '0xfD739d4e423301CE9385c1fb8850539D657C296D',
   STAKING_ACCOUNTANT: '0x9209648Ec9D448EF57116B73A2f081835643dc7A',
+  KMHYPE_STAKING_ACCOUNTANT: '0x5901e744759561C63309865Ef8822aBb041655E2', // Kinetiq Markets — same LST StakingAccountant codebase
   NATIVE: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE',
   WHYPE: '0x5555555555555555555555555555555555555555',
   RPCS: [
@@ -209,6 +212,14 @@ const CONFIG = {
       unit: 'HYPE', cooldown: 8.5, source: 'kinetiq', yieldLabel: 'APY',
       flow: 'buy kHYPE with HYPE on KyberSwap → unstake via Kinetiq → HYPE after 8.5 days · no fee',
       link: 'https://kinetiq.xyz/stake-hype?unstake=true'
+    },
+    {
+      sym: 'kmHYPE', name: 'Kinetiq Markets LST',
+      addr: '0x360C140E5344A1A0593D44B4ea6Fc7C3DAf0C473',
+      unit: 'HYPE', cooldown: 8.5, source: 'kinetiq-markets', yieldLabel: 'APY',
+      fee: 0.001, // 0.10% withdrawal fee, paid in kmHYPE
+      flow: 'buy kmHYPE with HYPE on KyberSwap → withdraw via Markets → HYPE after ~8.5 days · 0.10% fee',
+      link: 'https://kinetiq.xyz/docs/kmhype'
     },
     {
       sym: 'vkHYPE', name: 'Kinetiq Earn Vault (Veda)',
@@ -269,11 +280,14 @@ async function rpcCall(to, data){
   throw lastErr || new Error('all RPCs failed');
 }
 
-async function fetchKhypeRate(){
-  const oneKhype = '0000000000000000000000000000000000000000000000000de0b6b3a7640000';
-  const res = await rpcCall(CONFIG.STAKING_ACCOUNTANT, CONFIG.SEL_KHYPE_TO_HYPE + oneKhype);
+/* Kinetiq LST StakingAccountant.kHYPEToHYPE(1e18) — kmHYPE's accountant is the
+   same codebase (lib/lst/src/StakingAccountant.sol), so the same selector works. */
+async function fetchKinetiqRate(accountant){
+  const oneToken = '0000000000000000000000000000000000000000000000000de0b6b3a7640000';
+  const res = await rpcCall(accountant, CONFIG.SEL_KHYPE_TO_HYPE + oneToken);
   return fromWei(res);
 }
+const fetchKhypeRate = () => fetchKinetiqRate(CONFIG.STAKING_ACCOUNTANT);
 
 /* Veda/Nucleus BoringVault rate, converted into the token's loop unit.
    Accountant.getRate() is denominated in the vault's base asset. */
@@ -355,20 +369,22 @@ async function refresh(){
       full.tokens[token.sym] = entry;
 
       try {
-        entry.rate = token.source === 'kinetiq'
-          ? khypeRate
-          : await fetchVedaRate(token, khypeRate);
+        entry.rate = token.source === 'kinetiq'         ? khypeRate
+                   : token.source === 'kinetiq-markets' ? await fetchKinetiqRate(CONFIG.KMHYPE_STAKING_ACCOUNTANT)
+                   : await fetchVedaRate(token, khypeRate);
       } catch(e){
         entry.rateError = e.message || String(e);
         continue;
       }
 
+      const feeMult = 1 - (token.fee || 0);             // withdrawal fee taken in the LST (e.g. kmHYPE 0.10%)
+
       for (const size of CONFIG.SIZES){
         try {
           const rs = await kyberQuote(token, size);
           const tokOut = fromWei(rs.amountOut);
-          const buyRate = size / tokOut;                 // input asset paid per token
-          const redeemValue = tokOut * entry.rate;       // input asset received back at redemption
+          const buyRate = size / tokOut;                          // input asset paid per token
+          const redeemValue = tokOut * feeMult * entry.rate;      // input asset received back at redemption, net of fee
           const profit = redeemValue - size;
           const profitPct = (redeemValue / size - 1) * 100;
           const annualized = profitPct * (365 / token.cooldown);
@@ -438,7 +454,8 @@ function buildTokenSections(){
           <p>${t.name} — ${t.flow}</p>
           <div class="tok-stats">
             <span class="chip">1 ${t.sym} = <b id="rate-${t.sym}">…</b> ${t.unit}</span>
-            <span class="chip">cooldown <b>${t.cooldown}d</b></span>
+            <span class="chip">cooldown <b>${t.cooldown}d</b></span>${t.fee ? `
+            <span class="chip">fee <b>${(t.fee*100).toFixed(2)}%</b></span>` : ''}
             <span class="chip hl" id="best-${t.sym}">best ${t.yieldLabel} …</span>
           </div>
         </div>
