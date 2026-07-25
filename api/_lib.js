@@ -15,7 +15,10 @@ const CONFIG = {
     'https://rpc.hypurrscan.io',
     'https://hyperliquid.drpc.org'
   ],
-  KYBER: 'https://aggregator-api.kyberswap.com/hyperevm/api/v1/routes',
+  KYBER: 'https://aggregator-api.kyberswap.com/hyperevm/api/v1/routes', // kept as fallback
+  ENSO_ROUTE: 'https://api.enso.build/api/v1/shortcuts/route',
+  ENSO_PRICE: 'https://api.enso.build/api/v1/prices/999/0x5555555555555555555555555555555555555555',
+  FROM_ADDRESS: '0xd8da6bf26964af9d7eed9e03e53415d37aa96045',
   SEL_KHYPE_TO_HYPE: '0x759bc2fc', // keccak256("kHYPEToHYPE(uint256)")[:4]
   LIST_KEY: 'khype:snaps',
   MAX_SNAPSHOTS: 6000
@@ -48,20 +51,56 @@ async function fetchRedemptionRate() {
   return fromWei(res);
 }
 
-async function kyberRoute(tokenIn, tokenOut, amountInWeiDec) {
-  const u = `${CONFIG.KYBER}?tokenIn=${tokenIn}&tokenOut=${tokenOut}&amountIn=${amountInWeiDec}&gasInclude=true`;
-  const r = await fetch(u, { headers: { 'x-client-id': 'khype-arb-dashboard' } });
-  if (!r.ok) throw new Error(`Kyber HTTP ${r.status}`);
+let _priceCache = { value: null, ts: 0 };
+
+async function getHypePrice() {
+  const now = Date.now();
+  if (_priceCache.value !== null && now - _priceCache.ts < 60_000) return _priceCache.value;
+  const r = await fetch(CONFIG.ENSO_PRICE, {
+    headers: { Authorization: `Bearer ${process.env.ENSO_API_KEY}` }
+  });
+  if (!r.ok) throw new Error(`Enso price HTTP ${r.status}`);
   const j = await r.json();
-  const rs = j && j.data && j.data.routeSummary;
-  if (!rs) throw new Error((j && j.message) || 'no route');
-  return rs;
+  const price = j.price ?? j.data?.price ?? null;
+  if (price == null) throw new Error('no price in Enso response');
+  _priceCache = { value: price, ts: now };
+  return price;
+}
+
+async function ensoRoute(tokenIn, tokenOut, amountInWeiDec) {
+  const r = await fetch(CONFIG.ENSO_ROUTE, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${process.env.ENSO_API_KEY}`
+    },
+    body: JSON.stringify({
+      chainId: 999,
+      fromAddress: CONFIG.FROM_ADDRESS,
+      routingStrategy: 'router',
+      tokenIn: [tokenIn],
+      tokenOut: [tokenOut],
+      amountIn: [amountInWeiDec],
+      slippage: '500'
+    })
+  });
+  if (!r.ok) throw new Error(`Enso HTTP ${r.status}`);
+  const j = await r.json();
+  if (!j.amountOut) throw new Error(j.message || 'no route');
+  return { amountOut: j.amountOut, amountInUsd: null };
 }
 
 async function kyberQuote(tokenOut, hypeAmount) {
   const wei = toWeiDec(hypeAmount);
-  try { return await kyberRoute(CONFIG.NATIVE, tokenOut, wei); }
-  catch { return await kyberRoute(CONFIG.WHYPE, tokenOut, wei); }
+  let route;
+  try { route = await ensoRoute(CONFIG.NATIVE, tokenOut, wei); }
+  catch { route = await ensoRoute(CONFIG.WHYPE, tokenOut, wei); }
+  // Enso doesn't return amountInUsd, so fetch HYPE price separately
+  try {
+    const price = await getHypePrice();
+    route.amountInUsd = (price * hypeAmount).toFixed(4);
+  } catch {}
+  return route;
 }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));

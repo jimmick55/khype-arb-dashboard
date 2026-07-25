@@ -123,7 +123,7 @@
     <div class="card">
       <div class="label">HYPE Price</div>
       <div class="value" id="c-price">…</div>
-      <div class="sub">via KyberSwap</div>
+      <div class="sub">via Enso</div>
     </div>
     <div class="card">
       <div class="label">History</div>
@@ -158,7 +158,7 @@
   </div>
 
   <footer>
-    <span>Data: Kinetiq / Veda / Nucleus contracts (HyperEVM RPC) &amp; KyberSwap · <span id="last-updated"></span></span>
+    <span>Data: Kinetiq / Veda / Nucleus contracts (HyperEVM RPC) & Enso · <span id="last-updated"></span></span>
     <span>
       <a href="https://kinetiq.xyz/stake-hype?unstake=true" target="_blank" rel="noopener">Kinetiq Unstake</a> ·
       <a href="https://kinetiq.xyz/docs/kmhype" target="_blank" rel="noopener">Markets (kmHYPE)</a> ·
@@ -194,7 +194,7 @@ const CONFIG = {
     'https://rpc.hypurrscan.io',
     'https://hyperliquid.drpc.org'
   ],
-  KYBER: 'https://aggregator-api.kyberswap.com/hyperevm/api/v1/routes',
+  KYBER: 'https://aggregator-api.kyberswap.com/hyperevm/api/v1/routes', // kept as fallback
   // selectors
   SEL_KHYPE_TO_HYPE: '0x759bc2fc', // kHYPEToHYPE(uint256)
   SEL_EX_LST_TO_OUT: '0xa618ad3f', // exLstToTokenOut(address,address,uint256) — Markets ExchangeRouter
@@ -213,7 +213,7 @@ const CONFIG = {
       sym: 'kHYPE', name: 'Kinetiq Staked HYPE',
       addr: '0xfD739d4e423301CE9385c1fb8850539D657C296D',
       unit: 'HYPE', cooldown: 8.5, source: 'kinetiq', yieldLabel: 'APY',
-      flow: 'buy kHYPE with HYPE on KyberSwap → unstake via Kinetiq → HYPE after 8.5 days · no fee',
+      flow: 'buy kHYPE with HYPE on Enso → unstake via Kinetiq → HYPE after 8.5 days · no fee',
       link: 'https://kinetiq.xyz/stake-hype?unstake=true'
     },
     {
@@ -221,7 +221,7 @@ const CONFIG = {
       addr: '0x360C140E5344A1A0593D44B4ea6Fc7C3DAf0C473',
       unit: 'HYPE', cooldown: 8.5, source: 'kinetiq-markets', yieldLabel: 'APY',
       fee: 0.001, // 0.10% withdrawal fee, paid in kmHYPE
-      flow: 'buy kmHYPE with HYPE on KyberSwap → withdraw via Markets → HYPE after ~8.5 days · 0.10% fee',
+      flow: 'buy kmHYPE with HYPE on Enso → withdraw via Markets → HYPE after ~8.5 days · 0.10% fee',
       link: 'https://kinetiq.xyz/docs/kmhype'
     },
     {
@@ -229,7 +229,7 @@ const CONFIG = {
       addr: '0x9ba2edc44e0a4632eb4723e81d4142353e1bb160',
       unit: 'kHYPE', cooldown: 5, source: 'veda', yieldLabel: 'APR',
       accountant: null, // auto-discovered via vault.hook() → teller.accountant()
-      flow: 'swap kHYPE → vkHYPE on KyberSwap → unstake vault → kHYPE after ~5 days · no exit fee',
+      flow: 'swap kHYPE → vkHYPE on Enso → unstake vault → kHYPE after ~5 days · no exit fee',
       link: 'https://kinetiq.xyz/earn/kinetiq-earn'
     },
     {
@@ -237,7 +237,7 @@ const CONFIG = {
       addr: '0x5748ae796AE46A4F1348a1693de4b50560485562',
       unit: 'HYPE', cooldown: 3, source: 'veda', yieldLabel: 'APY',
       accountant: '0xcE621a3CA6F72706678cFF0572ae8d15e5F001c3',
-      flow: 'buy LHYPE with HYPE on KyberSwap → unstake → HYPE after 3 days',
+      flow: 'buy LHYPE with HYPE on Enso → unstake → HYPE after 3 days',
       link: 'https://www.loopedhype.com'
     }
   ]
@@ -340,21 +340,21 @@ async function fetchVedaRate(token, khypeRate){
   return token.unit === 'HYPE' ? raw * khypeRate : raw / khypeRate;
 }
 
-async function kyberRoute(tokenIn, tokenOut, amountInWeiDec){
-  const u = `${CONFIG.KYBER}?tokenIn=${tokenIn}&tokenOut=${tokenOut}&amountIn=${amountInWeiDec}&gasInclude=true`;
-  const r = await fetch(u, { headers: { 'x-client-id': 'khype-arb-dashboard' } });
-  if (!r.ok) throw new Error(`Kyber HTTP ${r.status}`);
+async function ensoRoute(tokenIn, tokenOut, amountInWeiDec){
+  const u = `/api/quote?tokenIn=${tokenIn}&tokenOut=${tokenOut}&amountIn=${amountInWeiDec}`;
+  const r = await fetch(u);
+  if (!r.ok) throw new Error(`Enso HTTP ${r.status}`);
   const j = await r.json();
-  const rs = j?.data?.routeSummary;
-  if (!rs) throw new Error(j?.message || 'no route');
-  return rs;
+  if (j.error) throw new Error(j.error);
+  if (!j.amountOut) throw new Error('no amountOut');
+  return { amountOut: j.amountOut, amountInUsd: j.amountInUsd };
 }
 
 async function kyberQuote(token, amount){
   const wei = toWeiDec(amount);
-  if (token.unit === 'kHYPE') return kyberRoute(CONFIG.KHYPE, token.addr, wei);
-  try { return await kyberRoute(CONFIG.NATIVE, token.addr, wei); }
-  catch { return await kyberRoute(CONFIG.WHYPE, token.addr, wei); }
+  if (token.unit === 'kHYPE') return ensoRoute(CONFIG.KHYPE, token.addr, wei);
+  try { return await ensoRoute(CONFIG.NATIVE, token.addr, wei); }
+  catch { return await ensoRoute(CONFIG.WHYPE, token.addr, wei); }
 }
 
 async function fetchServerHistory(){
