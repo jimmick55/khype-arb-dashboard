@@ -1,4 +1,5 @@
 const { CONFIG, takeSnapshot, redis } = require('./_lib');
+const { maybeAlert, sendTelegram } = require('./_alert');
 
 module.exports = async (req, res) => {
   // Optional protection: set CRON_SECRET in Vercel env vars.
@@ -13,11 +14,27 @@ module.exports = async (req, res) => {
     }
   }
 
+  // /api/snapshot?key=...&test=1 → just prove Telegram is wired up correctly.
+  if (req.query && req.query.test) {
+    try {
+      await sendTelegram('✅ Test message from the kHYPE arb dashboard.');
+      return res.status(200).json({ ok: true, test: 'sent' });
+    } catch (e) {
+      return res.status(500).json({ error: String((e && e.message) || e) });
+    }
+  }
+
   try {
     const snap = await takeSnapshot();
     await redis(['RPUSH', CONFIG.LIST_KEY, JSON.stringify(snap)]);
     await redis(['LTRIM', CONFIG.LIST_KEY, String(-CONFIG.MAX_SNAPSHOTS), '-1']);
-    res.status(200).json({ ok: true, snap });
+
+    // Alerting must never break snapshotting.
+    let alert;
+    try { alert = await maybeAlert(snap); }
+    catch (e) { alert = { sent: false, error: String((e && e.message) || e) }; }
+
+    res.status(200).json({ ok: true, snap, alert });
   } catch (e) {
     res.status(500).json({ error: String((e && e.message) || e) });
   }
