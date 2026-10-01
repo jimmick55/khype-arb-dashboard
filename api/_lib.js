@@ -3,7 +3,7 @@
    Snapshots still track kHYPE ONLY (charts are kHYPE-only by design, and this
    keeps Redis storage tiny). The multi-token helpers added below are used for
    ALERTING only — they read redemption rates on-chain and take a single quote
-   per token, so they cost 3 extra Enso calls per cron run rather than 15.
+   per token, so they cost 3 extra Kyber calls per cron run rather than 15.
 
    Underscore prefix = not exposed as a route by Vercel. */
 
@@ -23,10 +23,7 @@ const CONFIG = {
     'https://rpc.hypurrscan.io',
     'https://hyperliquid.drpc.org'
   ],
-  KYBER: 'https://aggregator-api.kyberswap.com/hyperevm/api/v1/routes', // kept as fallback
-  ENSO_ROUTE: 'https://api.enso.build/api/v1/shortcuts/route',
-  ENSO_PRICE: 'https://api.enso.build/api/v1/prices/999/0x5555555555555555555555555555555555555555',
-  FROM_ADDRESS: '0xd8da6bf26964af9d7eed9e03e53415d37aa96045',
+  KYBER: 'https://aggregator-api.kyberswap.com/hyperevm/api/v1/routes',
 
   // selectors (mirrors index.html)
   SEL_KHYPE_TO_HYPE: '0x759bc2fc', // kHYPEToHYPE(uint256)
@@ -153,66 +150,30 @@ async function fetchTokenRate(token, khypeRate) {
 
 /* ---------- DEX quotes ---------- */
 
-let _priceCache = { value: null, ts: 0 };
-
-async function getHypePrice() {
-  const now = Date.now();
-  if (_priceCache.value !== null && now - _priceCache.ts < 60_000) return _priceCache.value;
-  const r = await fetch(CONFIG.ENSO_PRICE, {
-    headers: { Authorization: `Bearer ${process.env.ENSO_API_KEY}` }
-  });
-  if (!r.ok) throw new Error(`Enso price HTTP ${r.status}`);
+async function kyberRoute(tokenIn, tokenOut, amountInWeiDec) {
+  const u = `${CONFIG.KYBER}?tokenIn=${tokenIn}&tokenOut=${tokenOut}&amountIn=${amountInWeiDec}&gasInclude=true`;
+  const r = await fetch(u, { headers: { 'x-client-id': 'khype-arb-dashboard' } });
+  if (!r.ok) throw new Error(`Kyber HTTP ${r.status}`);
   const j = await r.json();
-  const price = j.price ?? j.data?.price ?? null;
-  if (price == null) throw new Error('no price in Enso response');
-  _priceCache = { value: price, ts: now };
-  return price;
-}
-
-async function ensoRoute(tokenIn, tokenOut, amountInWeiDec) {
-  const r = await fetch(CONFIG.ENSO_ROUTE, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${process.env.ENSO_API_KEY}`
-    },
-    body: JSON.stringify({
-      chainId: 999,
-      fromAddress: CONFIG.FROM_ADDRESS,
-      routingStrategy: 'router',
-      tokenIn: [tokenIn],
-      tokenOut: [tokenOut],
-      amountIn: [amountInWeiDec],
-      slippage: '500'
-    })
-  });
-  if (!r.ok) throw new Error(`Enso HTTP ${r.status}`);
-  const j = await r.json();
-  if (!j.amountOut) throw new Error(j.message || 'no route');
-  return { amountOut: j.amountOut, amountInUsd: null };
+  const rs = j && j.data && j.data.routeSummary;
+  if (!rs) throw new Error((j && j.message) || 'no route');
+  return rs;
 }
 
 /* Original kHYPE-only quote (native → kHYPE, WHYPE fallback). Unchanged. */
 async function kyberQuote(tokenOut, hypeAmount) {
   const wei = toWeiDec(hypeAmount);
-  let route;
-  try { route = await ensoRoute(CONFIG.NATIVE, tokenOut, wei); }
-  catch { route = await ensoRoute(CONFIG.WHYPE, tokenOut, wei); }
-  try {
-    const price = await getHypePrice();
-    route.amountInUsd = (price * hypeAmount).toFixed(4);
-  } catch {}
-  return route;
+  try { return await kyberRoute(CONFIG.NATIVE, tokenOut, wei); }
+  catch { return await kyberRoute(CONFIG.WHYPE, tokenOut, wei); }
 }
 
 /* Unit-aware quote: kHYPE-denominated tokens (vkHYPE) are bought with kHYPE. */
 async function quoteToken(token, amount) {
   const wei = toWeiDec(amount);
-  if (token.unit === 'kHYPE') return ensoRoute(CONFIG.KHYPE, token.addr, wei);
-  try { return await ensoRoute(CONFIG.NATIVE, token.addr, wei); }
-  catch { return await ensoRoute(CONFIG.WHYPE, token.addr, wei); }
+  if (token.unit === 'kHYPE') return kyberRoute(CONFIG.KHYPE, token.addr, wei);
+  try { return await kyberRoute(CONFIG.NATIVE, token.addr, wei); }
+  catch { return await kyberRoute(CONFIG.WHYPE, token.addr, wei); }
 }
-
 /* Same math as the frontend: fee is netted out of redeem value. */
 function computeYield(token, size, amountOut, rate) {
   const feeMult = 1 - (token.fee || 0);

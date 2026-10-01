@@ -44,9 +44,9 @@ each token annualizes over its own cooldown. Trade sizes quoted:
   instead of wrong numbers — you can then pin the address in
   `CONFIG.TOKENS[].accountant` in `index.html`.
 
-DEX buy quotes come from the Enso Route API (native HYPE → token,
-WHYPE fallback). HYPE/USD is derived from Enso's price endpoint.
-Requires `ENSO_API_KEY` env var (get one at [developers.enso.build](https://developers.enso.build)).
+DEX buy quotes come from the KyberSwap aggregator API (native HYPE → token,
+WHYPE fallback). No API key required. HYPE/USD price is derived from
+KyberSwap's route response (`amountInUsd` field).
 
 Token addresses: kHYPE `0xfD739d4e423301CE9385c1fb8850539D657C296D`,
 kmHYPE `0x360C140E5344A1A0593D44B4ea6Fc7C3DAf0C473`,
@@ -65,25 +65,22 @@ commands at 5-min snapshots) + cron-job.org (free).
 
 1. **Database** — [console.upstash.com](https://console.upstash.com) → create
    free Redis DB → copy `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`.
-2. **Enso API key** — [developers.enso.build](https://developers.enso.build) →
-   create an API key (free tier available) → save as `ENSO_API_KEY`.
-3. **Deploy** — `vercel deploy --prod`, then in Vercel → Settings →
-   Environment Variables add the two Upstash vars, `ENSO_API_KEY`, and
+2. **Deploy** — `vercel deploy --prod`, then in Vercel → Settings →
+   Environment Variables add the two Upstash vars and
    `CRON_SECRET` (any random string). Redeploy.
-4. **Schedule** — Vercel's built-in cron on Hobby only runs daily (that's the
+3. **Schedule** — Vercel's built-in cron on Hobby only runs daily (that's the
    baseline in `vercel.json`). For 5-minute resolution: free option is a
    [cron-job.org](https://cron-job.org) job hitting
    `https://YOUR-APP.vercel.app/api/snapshot?key=YOUR_CRON_SECRET` every
    5 minutes; on Vercel Pro just change `vercel.json` to `*/5 * * * *`.
-5. **Verify** — `/api/snapshot?key=...` returns `{"ok":true}`, `/api/history`
+4. **Verify** — `/api/snapshot?key=...` returns `{"ok":true}`, `/api/history`
    returns snapshots, and the History card reads "Server (24/7) + live".
 
 ## Project layout
 
 ```
 index.html        dashboard (client-side live quotes for all 4 tokens + kHYPE charts)
-api/_lib.js       shared: RPC, Enso, kHYPE snapshot builder, Redis helper
-api/quote.js      serverless proxy for Enso Route API (hides API key)
+api/_lib.js       shared: RPC, KyberSwap, kHYPE snapshot builder, Redis helper
 api/snapshot.js   cron target — takes a kHYPE snapshot, stores it
 api/history.js    serves stored snapshots to the frontend
 vercel.json       cron config (daily baseline; see step 3)

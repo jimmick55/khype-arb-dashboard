@@ -6,7 +6,7 @@
    exactly 2 Upstash commands per cron run.
 
    kHYPE is read from the snapshot you already took (free). The other three
-   cost 1 Enso quote each per run.
+   cost 1 Kyber quote each per run.
 
    Env vars:
      TELEGRAM_BOT_TOKEN     from @BotFather                        (required)
